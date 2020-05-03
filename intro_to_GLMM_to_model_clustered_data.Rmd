@@ -4,7 +4,7 @@ knit: (function(input_file, encoding) {
   out_dir <- 'docs';
   rmarkdown::render(input_file,
  encoding=encoding,
- output_file=file.path(dirname(input_file), out_dir, 'intro_to_GLMM_to_model_clustered_data.html'))})
+ output_file=file.path(dirname(input_file), out_dir, 'index.html'))})
 author:
 - affiliation: "<a href='https://www.isglobal.org/en/' target='_blank'>$^1$Barcelona Institute for Global Health (ISGlobal), </a><a href='https://www.uab.cat/web/maths-department-1210142393255.html' target='_blank'>$^2$Department of Mathematics, Universitat Autònoma de Barcelona</a>"
   name: "<hr><a href='https://sites.google.com/view/josebarrera/home' target='_blank'>Jose Barrera-Gómez$^{1,2}$</a>"
