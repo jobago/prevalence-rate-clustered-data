@@ -170,6 +170,8 @@ myage0 <- 50
 myagerange <- c(48, 80)
 ```
 
+<a href="#top">Back to top</a>
+
 ### Results
 
 Let's see the result of a single simulation:
@@ -239,6 +241,8 @@ Results for `r nsim` simulations:
 ```{r printsumsim1rep}
 round(sumsim1rep, 2)
 ```
+
+<a href="#top">Back to top</a>
 
 ## Data clustered by several populations {.tabset .tabset-fade .tabset-pills}
 
@@ -328,6 +332,7 @@ VarCorr(mod)
 
 To learn about the syntax to specify the random effects structure, see Table 2 in https://cran.r-project.org/web/packages/lme4/vignettes/lmer.pdf
 
+<a href="#top">Back to top</a>
 
 ### Simulation setting
 
@@ -415,6 +420,8 @@ Now, we can set the following values for the extra parameters (you can change th
 myprobcities <- c(1, 2, 2, 3, 3)
 mysdranef <- 2    
 ```
+
+<a href="#top">Back to top</a>
 
 ### Results
 
@@ -519,6 +526,8 @@ Results for `r nsim` simulations:
 ```{r printsumsim2rep}
 round(sumsim2rep, 2)
 ```
+
+<a href="#top">Back to top</a>
 
 ## Modeling counts and rates {.tabset .tabset-fade .tabset-pills}
 
