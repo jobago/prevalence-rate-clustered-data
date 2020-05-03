@@ -1,0 +1,556 @@
+---
+title: "A (very brief) introduction to modeling prevalences and rates in clustered populations using GLMM"
+knit: (function(input_file, encoding) {
+  out_dir <- 'docs';
+  rmarkdown::render(input_file,
+ encoding=encoding,
+ output_file=file.path(dirname(input_file), out_dir, 'intro_to_GLMM_to_model_clustered_data.html'))})
+author:
+- affiliation: "<a href='https://www.isglobal.org/en/' target='_blank'>$^1$Barcelona Institute for Global Health (ISGlobal), </a><a href='https://www.uab.cat/web/maths-department-1210142393255.html' target='_blank'>$^2$Department of Mathematics, Universitat Autònoma de Barcelona</a>"
+  name: "<hr><a href='https://sites.google.com/view/josebarrera/home' target='_blank'>Jose Barrera-Gómez$^{1,2}$</a>"
+address:
+  - code: "<a href='https://www.isglobal.org/en/' target='_blank'>Barcelona Institute for Global Health (ISGlobal)</a>"
+    address: Department, Street, City, State, Zip
+date: "`r format(Sys.Date(), '%Y/%m/%d')`"
+output:
+  html_document:
+    theme: readable
+    highlight: zenburn
+    toc: FALSE
+    toc_depth: 3
+    toc_float:
+      collapse: false
+    number_sections: FALSE
+    df_print: default
+---
+
+<style type="text/css">
+body .main-container {
+  max-width: 90%;
+  margin-left: auto;
+  margin-right: auto;
+  text-align: justify
+    }
+code.r{ /* Code block */
+    font-size: 14px;
+}
+</style>
+
+
+**Disclaimer:** *The views and opinions expressed in this document are those of the author and do not necessarily reflect the official policy or position of any of the affiliations above.*
+<hr>
+
+
+```{r setup, include=FALSE}
+library(rmarkdown)
+library(knitr)
+library(lme4)
+knitr::opts_chunk$set(echo = TRUE, collapse = TRUE)
+```
+
+
+# Contents {.tabset .tabset-fade .tabset-pills}
+
+## Introduction {.tabset .tabset-fade .tabset-pills}
+
+Suppose we are interested in assessing how age and sex could affect the presence of a given disease in a given population. To do that, suppose we take a random sample of individuals from the population of interest resulting in a dataset including individuals from different cities. To emulate that, we can develop a simulation study.
+
+In this document we simulate data to reproduce the problem. Then, we fit a model to the simulated data and finally we compare the estimated effects with the true effects that were used to simulate the data.
+
+First, we consider the case of just one city and fit a logistic regression model (which is a model included in the family of General Linear Models, GLM). Then we generalise to the case of several city and we model the data using a logistic regression model with random effects (which is a model included in the family of General Linear Mixed Models, GLMM).
+
+## Data from a single population {.tabset .tabset-fade .tabset-pills}
+
+### Simulation setting
+
+We simulate a sample of size $n$ under the following conditions:
+
+* Sex ($S$), from a Bernoulli distribution with probablity of being a male equal to `probmale`
+
+* Age ($A$), from a normal distribution with approximate range equal to `agerange`
+
+* Outcome ($Y$), from a Bernoulli distribution with probability of being affected by the disease, $P(Y) = \pi$, which depends on $S$ and $A$ through the following logistic model:
+
+\begin{equation}
+\label{eq:glm}
+\log(\text{odds}(Y\, |\, S, A))
+=
+\log\left(\frac{\pi}{1 - \pi}\right)
+=
+\beta_0
++
+\beta_S\,S
++
+\beta_A\,A.
+\end{equation}
+
+That model includes three coefficents ($\beta_0$, $\beta_S$ and $\beta_A$), so we need three "conditions" in order to set the values of these coefficients. For instance:
+
+  + The OR of $Y$ associated to sex (i.e. when changing from female to male) is equal to `orsex`
+  + The OR of $Y$ associated to age, when increasing the age `deltaage` years, is equal to `orage`
+  + The pravalence of $Y$ among women aged `age0` is equal to `pi0`
+
+**<span style="color: blue;">Exercise:</span>** Prove the following relationships
+
+\begin{equation}
+\label{eq:orglm}
+\left\{
+\begin{array}{l}
+\beta_S = \log(\textbf{orsex})\\
+\beta_A = \frac{\log(\textbf{orage})}{\textbf{deltaage}}\\
+\beta_0 = \log\left(\frac{\textbf{pi0}}{1 - \textbf{pi0}}\right) -  \beta_A\,\textbf{age0}
+\end{array}
+\right.
+\end{equation}
+
+The following function `simbin` implements such simulation setting as well as the fitting model to the simulate data. The function returns the values of the OR (true and estimated) and the fitted model.
+
+```{r simbin}
+simbin <- function(n,             # sample size
+                   probmale,      # probability of male
+                   orsex,         # OR for sex
+                   orage,         # OR for age
+                   deltaage,      # increase in age associated to orage  
+                   pi0,           # prevalence for women age0 years old
+                   age0,          # age associated to pi0  
+                   agerange,      # approx. age range
+                   seed = NULL) {
+  # set the seed if any:
+  if (!is.null(seed))
+    set.seed(seed)
+  
+  # model:
+  # logodds(y) = L = b0 + b1 * sex + b2 * age
+  # simulate sex
+  sex <- sample(x = c("male", "female"),
+                size = n,
+                prob = c(probmale, 1 - probmale),
+                replace = TRUE)
+  sex <- as.factor(sex)
+  # simulate age
+  age <- round(rnorm(n = n,
+                     mean = mean(agerange),
+                     sd = diff(agerange) / (2 * qnorm(0.99))))
+  # get betasex
+  betasex <- log(orsex) 
+  # get betaage
+  betaage <- log(orage) / deltaage
+  # get beta0
+  beta0 <- log(pi0 / (1 - pi0)) - age0 * betaage
+  # get linear predictor L
+  L <- beta0 + betasex * (sex == "male") + betaage * age
+  prob <- 1 / (1 + exp(-L))
+  data <- data.frame(sex, age, prob)
+  # get y
+  data$y <- Rlab::rbern(n = n, prob = prob)
+  # fit model
+  mod <- glm(y ~ sex + age, data = data, family = binomial)
+  # OR for sex (true and estimated)
+  ORsex <- c(orsex, exp(coef(mod)["sexmale"]))
+  # OR for age (true and estimated)
+  ORage <- c(orage, exp(deltaage * coef(mod)["age"]))
+  OR <- rbind(ORsex, ORage)
+  rownames(OR) <- c("sex", "age")
+  colnames(OR) <- c("true", "estimate")
+  res <- list(or = OR, model = mod)
+  return(res)
+}
+```
+
+Now, we can set the following values for the simulations (you can change them to explore new results):
+
+```{r pars}
+myn <- 2000
+myprobmale <- 0.5
+myorsex <- 1.05
+myorage <- 1.1
+mydeltaage <- 15
+mypi0 <- 0.25
+myage0 <- 50
+myagerange <- c(48, 80)
+```
+
+### Results
+
+Let's see the result of a single simulation:
+
+
+```{r sim1}
+sim1 <- simbin(n = myn,
+               probmale = myprobmale,
+               orsex = myorsex,
+               orage = myorage,
+               deltaage = mydeltaage,
+               pi0 = mypi0,
+               age0 = myage0,
+               agerange = myagerange,
+               seed = 666)
+class(sim1)
+names(sim1)
+sim1
+```
+
+In the previous output, we can see that the OR estimates are not exactly equal to the true values. To check if it is due just to error sampling, we can replicate the simulations a lot of times and then look at the distribution of the extimates:
+
+```{r sim1rep, cache=TRUE}
+set.seed(666)
+nsim <- 500   # number of simulations
+sim1rep <- replicate(n = nsim,
+                     expr = simbin(n = myn,
+                                   probmale = myprobmale,
+                                   orsex = myorsex,
+                                   orage = myorage,
+                                   deltaage = mydeltaage,
+                                   pi0 = mypi0,
+                                   age0 = myage0,
+                                   agerange = myagerange,
+                                   seed = NULL)$or[, "estimate"]  # keep only estimates
+)
+
+# put it as a data.frame
+sim1rep <- as.data.frame(t(sim1rep))
+```
+
+We can see the estimates of the first simulations
+
+```{r printsim1rep}
+head(sim1rep)
+```
+
+We can visualize how them are distributed
+
+```{r plottsim1rep, fig.width=8, fig.height=4, fig.align='center', out.width='80%'}
+np <- dim(sim1rep)[2]
+par(las = 1, mfrow = c(1, np))
+for (i in 1:np)
+  plot(density(sim1rep[, i]), main = paste("OR associated to", names(sim1rep)[i]), xlab = "Estimate")
+```
+
+Now we can calculate mean values and empirical 95% confidence interval for the estimates and compare with the true values:
+
+```{r sumsim1rep}
+sumsim1rep <- apply(sim1rep, 2, FUN = function(x) c(estimate = mean(x), quantile(x, probs = c(2.5, 97.5) / 100)))
+sumsim1rep <- t(sumsim1rep)
+sumsim1rep <- cbind(true = c(myorsex, myorage), sumsim1rep)
+```
+
+Results for `r nsim` simulations:
+
+```{r printsumsim1rep}
+round(sumsim1rep, 2)
+```
+
+## Data clustered by several populations {.tabset .tabset-fade .tabset-pills}
+
+### Introduction
+
+Suppose now we have the same modeling problem but data now are gathered in several cities (i.e. multi-city study). Now, we should take into account that is reasonable to assume that two individuals could be more correlated if they belong to the same city. For instance, sociocultural, economic or lifestyle characteristics of individuals could be more correlated for two individuals who beleng to the same city than for two individuals who belong to different city. This is related with the concepts of **within-city variability** (variability among individuals from the same city) and **between-city variability** (variability among cities "mean individuals"). This situation can be modeled using GLMM, which can include **fixed effects** (in this example, the effects of sex and age) and **random effects** (in this example, the effect of the city). Roughly, a random effect can be seen as a perturbation of a fixed effect, with mean zero and a (unknown) variance. For instance, if we assume a random effect of the city, we are assuming that each city's specific characteristics have an effect in the prevalence of $Y$ that could be one (o more) of these:
+
+* A perturbation of the prevalence for a given profile of sex and age. Then we say that variable city has a random effect on the intercept (i.e. on $\beta_0$):
+
+$$
+\beta_0
+=
+\beta_{00}
++
+\beta_{0i},
+$$
+
+where $\beta_{00}$ is the common intercept for all individuals and $\beta_{0i} \sim \mathcal{N}(0, \sigma_0)$ is the specific perturbation of $\beta_0$ for city $i$. Note that, since $\mathbb{E}(\beta_{0i}) = 0$, $\mathbb{E}(\beta_0) = \mathbb{E}(\beta_{00})$.
+
+
+* A perturbation of the effect of sex. Then we say that variable city has a random effect on sex (i.e. on $\beta_S$):
+
+$$
+\beta_S
+=
+\beta_{S0}
++
+\beta_{Si},
+$$
+where $\beta_{S0}$ is the common (poblational) effect of sex and $\beta_{Si} \sim \mathcal{N}(0, \sigma_S)$ is the specific perturbation of such effect for city $i$. Note that, since $\mathbb{E}(\beta_{Si}) = 0$, $\mathbb{E}(\beta_S) = \mathbb{E}(\beta_{S0})$.
+
+
+* A perturbation of the effect of age. Then we say that variable city has a random effect on sex (i.e. on $\beta_A$)
+
+$$
+\beta_A
+=
+\beta_{A0}
++
+\beta_{Ai},
+$$
+where $\beta_{A0}$ is the common (poblational) effect of age and $\beta_{Ai} \sim \mathcal{N}(0, \sigma_A)$ is the specific perturbation of such effect for city $i$. Note that, since $\mathbb{E}(\beta_{Ai}) = 0$, $\mathbb{E}(\beta_A) = \mathbb{E}(\beta_{A0})$.
+
+Hence, the interpretation of $\beta_0$, $\beta_S$ and $\beta_A$ is essentially the same than in the model without random effects.
+
+In this example we assume (then in most cases in real studies) that the random effect on the city only exists in the intercept. That is to say that de effects of sex and age on the outcome are the same for all individuals regardless of the city they beleng to, and that the effect of the city is just a perturbation on the basal prevalence of the outcome. Hence, denoting cities by $C_i, i = 1, 2, \dots, I$, where $I$ is the number of cities, the model would be:
+
+\begin{equation}
+\label{eq:glmmlogistic}
+\log(\text{odds}(Y\, |\, S, A, C))
+=
+\log\left(\frac{\pi}{1 - \pi}\right)
+=
+(\beta_{00} + \beta_{0i})
++
+\beta_S\,S
++
+\beta_A\,A,
+\quad
+\beta_{0i} \sim \mathcal{N}(0, \sigma_0).
+\end{equation}
+
+In **R**, the model can be fitted using the following syntax:
+
+```{r glmmlogisticr, eval=FALSE}
+library(lme4)
+mod <- glmer(Y ~ S + A + (1 | C), family = binomial, data = data)
+```
+
+The estimates of $\beta$ coefficients associated to the fixed effects (in this case, $\beta_S$ and $\beta_A$), including the intercept coefficient $\beta_{00}$, are available at:
+
+```{r glmmfixef, eval=FALSE}
+fixef(mod)
+```
+
+The estimates of $\beta$ coefficients associated to the random effects (in this case, $\beta_{0i}$) are available at:
+
+```{r glmmranef, eval=FALSE}
+ranef(mod)
+```
+
+The estimates of the covariance matrix of the random effects (in this case, a single parameter, $\sigma_0$) are available at:
+
+```{r glmmsdranef, eval=FALSE}
+VarCorr(mod)
+```
+
+To learn about the syntax to specify the random effects structure, see Table 2 in https://cran.r-project.org/web/packages/lme4/vignettes/lmer.pdf
+
+
+### Simulation setting
+
+We proceed as in Case 1 but now we need to simulate also the random effect of the city, so we now add the variable city ($C$) and the parameters `cities` (the labels for the city names) and the proportion of observations in each city, `probcities`. The implementation is made in the function `simbinr`, which is analogous to `simbin`.
+
+```{r simbinr}
+simbinr <- function(n,                 # see simbin
+                    probmale,          # see simbin
+                    orsex,             # see simbin
+                    orage,             # see simbin
+                    deltaage,          # see simbin  
+                    pi0,               # see simbin
+                    age0,              # see simbin  
+                    agerange,          # see simbin
+                    cities,            # city labels
+                    probcities = NULL, # city sampling probs (NULL = equal probs)
+                    sdranef,           # sd of the random effect of city in intercept
+                    seed = NULL) {
+  if (!is.null(seed))
+    set.seed(seed)
+  
+  # model:
+  # logodds(y) = L = b0 + b1 * sex + b2 * age
+  # simulate sex
+  sex <- sample(x = c("male", "female"),
+                size = n,
+                prob = c(probmale, 1 - probmale),
+                replace = TRUE)
+  sex <- as.factor(sex)
+  # simulate age
+  age <- round(rnorm(n = n,
+                     mean = mean(agerange),
+                     sd = diff(agerange) / (2 * qnorm(0.99)))
+               )
+  # simulate cities:
+  ncities <- length(cities)
+  if (is.null(probcities))
+    probcities <- rep(1, ncities)
+  city <- sample(x = cities,
+                 size = n,
+                 prob = probcities,
+                 replace = TRUE)
+  city <- as.factor(city)
+  # get betasex
+  betasex <- log(orsex) 
+  # get betaage
+  betaage <- log(orage) / deltaage
+  # get beta0
+  beta0 <- log(pi0 / (1 - pi0)) - age0 * betaage
+ 
+  data <- data.frame(sex, age, city)
+  # simulate error by city
+  errorcity <- rnorm(n = ncities, mean = 0, sd = sdranef)
+  cityaux <- data.frame(city = cities, error = errorcity)
+  data <- merge(data, cityaux)
+  # get linear predictor L
+  L <- beta0 + betasex * (data$sex == "male") + betaage * data$age + data$error
+  prob <- 1 / (1 + exp(-L))
+  # get y
+  data$y <- Rlab::rbern(n = n, prob = prob)
+  # fit model
+  mod <- glmer(y ~ sex + age + (1 | city), data = data, family = binomial)
+  # OR for sex (true and estimated)
+  ORsex <- c(sextrue = orsex, sexestimate = exp(fixef(mod)["sexmale"]))
+  # OR for age (true and estimated)
+  ORage <- c(agetrue = orage, ageestimate = exp(deltaage * fixef(mod)["age"]))
+  # estimated sd of the random effect
+  sdranef <- c(sdtrue = sdranef, sdestimate = sqrt(as.numeric(VarCorr(mod))))
+  # estimates
+  estimates <- rbind(ORsex, ORage, sdranef)
+  rownames(estimates) <- c("ORsex", "ORage", "sd0")
+  colnames(estimates) <- c("true", "estimate")
+  
+  # random effects (city-specific intercepts):
+  beta0city <- ranef(mod)
+  res <- list(estimates = estimates, beta0i = beta0city, model = mod)
+  return(res)
+}
+```
+
+Now, we can set the following values for the extra parameters (you can change them to explore new results):
+
+```{r pars2}
+(mycities <- LETTERS[1:5])
+myprobcities <- c(1, 2, 2, 3, 3)
+mysdranef <- 2    
+```
+
+### Results
+
+Let's see the result of a single simulation:
+
+```{r sim2}
+sim2 <- simbinr(n = myn,
+                probmale = myprobmale,
+                orsex = myorsex,
+                orage = myorage,
+                deltaage = mydeltaage,
+                pi0 = mypi0,
+                age0 = myage0,
+                agerange = myagerange,
+                cities = mycities,
+                probcities = myprobcities,
+                sdranef = mysdranef, 
+                seed = 666)
+names(sim2)
+sim2
+```
+
+The estimates of $\beta_S$ and $\beta_A$ (and $\beta_{00}$) are:
+
+```{r sim2fixef}
+(betas <- fixef(sim2$model))
+```
+
+Hence, the OR estimates for sex and for a `r mydeltaage` years increase in age are, respectively:
+  
+```{r sim2or}
+exp(betas["sexmale"])
+exp(mydeltaage * betas["age"])
+```
+
+The estimates of $\beta$ coefficients associated to the random effects (i.e. the city-specific perturbations of the intercept, $\beta_{0i}$) are:
+
+```{r sim2ranef}
+ranef(sim2$model)
+```
+
+The estimates of the covariance matrix of the random effects (in this case, a single parameter, $\sigma_0$) are:
+
+```{r sim2sdranef}
+(varranef <- VarCorr(sim2$model))
+```
+
+And $\sigma_0$ is available at:
+
+```{r sim2sdranef2}
+sqrt(as.numeric(varranef))
+```
+
+In previous results, we can see that the OR and $\sigma_0$ estimates are not exactly equal to the true values. To check that that is due to error sampling, we can replicate the simulations a lot of times and look at the distribution of the values of the estimates:
+
+```{r sim2rep, cache=TRUE}
+set.seed(666)
+sim2rep <- replicate(n = nsim,
+                     expr = simbinr(n = myn,
+                                    probmale = myprobmale,
+                                    orsex = myorsex,
+                                    orage = myorage,
+                                    deltaage = mydeltaage,
+                                    pi0 = mypi0,
+                                    age0 = myage0,
+                                    agerange = myagerange,
+                                    cities = mycities,
+                                    probcities = myprobcities,
+                                    sdranef = mysdranef, 
+                                    seed = NULL)$estimates[, "estimate"] # only estimates
+)
+
+# put it as a data.frame
+sim2rep <- as.data.frame(t(sim2rep))
+```
+
+We can see the estimates of the first simulations
+
+```{r printsim2rep}
+head(sim2rep)
+```
+
+We can visualize how them are distributed
+
+```{r plottsim2rep, fig.width=8, fig.height=3, fig.align='center', out.width='80%'}
+np <- dim(sim2rep)[2]
+par(las = 1, mfrow = c(1, np))
+for (i in 1:np)
+  plot(density(sim2rep[, i]), main = paste("OR associated to", names(sim2rep)[i]), xlab = "Estimate")
+```
+
+Now we can calculate mean values and empirical 95% confidence interval for the estimates and compare with the true values:
+
+```{r sumsim2rep}
+sumsim2rep <- apply(sim2rep, 2, FUN = function(x) c(estimate = mean(x), quantile(x, probs = c(2.5, 97.5) / 100)))
+sumsim2rep <- t(sumsim2rep)
+sumsim2rep <- cbind(true = c(myorsex, myorage, mysdranef), sumsim2rep)
+```
+
+Results for `r nsim` simulations:
+
+```{r printsumsim2rep}
+round(sumsim2rep, 2)
+```
+
+## Modeling counts and rates {.tabset .tabset-fade .tabset-pills}
+
+Similarly than we can extend the logistic regression model to the logistic regression mixed models to include random effects when modeling a binary outcome, we can extend the Poisson regression model to the Poisson mixed effects model to include random effects when modeling count or rate outcomes. For instance, if we are interested in modeling the effect of both sex and age on a count outcome $Z$ (assuming $Z \sim \mathcal{Pois}(\lambda)$), including a random effect of city on the intercept, we could fit the following Poisson regression mixed effects model (assuming the usual logarithmic link function):
+
+
+\begin{equation}
+\label{eq:glmmpoisson}
+\log(\lambda |\, S, A, C))
+=
+(\beta_{00} + \beta_{0i})
++
+\beta_S\,S
++
+\beta_A\,A,
+\quad
+\beta_{0i} \sim \mathcal{N}(0, \sigma_0).
+\end{equation}
+
+In **R**:
+
+```{r glmmpoissonr, eval=FALSE}
+library(lme4)
+mod <- glmer(Y ~ S + A + (1 | C), family = poisson, data = data)
+```
+
+## Further reading {.tabset .tabset-fade .tabset-pills}
+
+* A reading on modeling clustered categorical data with mixed effects models can be found in chapter 13 of [this book](https://www.wiley.com/en-es/Categorical+Data+Analysis,+3rd+Edition-p-9780470463635){target="_blank"} and in chapter 10 of [a more recent edition](https://www.wiley.com/en-es/An+Introduction+to+Categorical+Data+Analysis,+3rd+Edition-p-9781119405269){target="_blank"} of the same book.
+
+
+
+
+* A reading on analysis of multicentre epidemiological studies, contrasting fixed or random effects modelling and and meta-analysis can be found [here](https://academic.oup.com/ije/article/47/4/1343/5042988?guestAccessKey=38c30e5f-7f8d-4cc9-b0dc-5d0cd8e65725){target="_blank"}.
+
