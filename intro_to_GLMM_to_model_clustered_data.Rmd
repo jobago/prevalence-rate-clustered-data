@@ -312,10 +312,16 @@ library(lme4)
 mod <- glmer(Y ~ S + A + (1 | C), family = binomial, data = data)
 ```
 
-The estimates of $\beta$ coefficients associated to the fixed effects (in this case, $\beta_S$ and $\beta_A$), including the intercept coefficient $\beta_{00}$, are available at:
+The estimates of $\beta$ coefficients associated to the fixed effects (in this case, $\beta_S$ and $\beta_A$), including the intercept coefficient $\beta_{00}$, can be obtained with:
+
+```{r glmmfixefci, eval=FALSE}
+fixef(mod)
+```
+
+A 95\% confidence interval for such coefficients can be obtained with:
 
 ```{r glmmfixef, eval=FALSE}
-fixef(mod)
+confint(mod, parm = "beta_")
 ```
 
 The estimates of $\beta$ coefficients associated to the random effects (in this case, $\beta_{0i}$) are available at:
@@ -444,29 +450,61 @@ names(sim2)
 sim2
 ```
 
+The fitted model is:
+
+```{r sim2mod}
+mod2 <- sim2$model
+
+mod2
+
+summary(mod2)
+```
+
 The estimates of $\beta_S$ and $\beta_A$ (and $\beta_{00}$) are:
 
-```{r sim2fixef}
-(betas <- fixef(sim2$model))
+```{r sim2betas}
+(betas <- fixef(mod2))
 ```
 
-Hence, the OR estimates for sex and for a `r mydeltaage` years increase in age are, respectively:
+A 95\% confidence interval for such coefficients are:
+
+```{r sim2betasci, cache=TRUE}
+(cibetas <- confint(mod2, parm = "beta_"))
+```
+
+We can merge both point estimates and confidence intervals. Also, we can drop the results regarding the intercept of the model because that information is not of interest:
+
+```{r sim2betasci2}
+betas <- cbind(betas, cibetas)
+betas <- betas[!rownames(betas) == "(Intercept)", ]
+colnames(betas)[colnames(betas) == "betas"] <- "estimate"
+betas
+```
+
+Hence, given that $\exp(\beta) = \text{OR}$, we can easily get the OR estimates (and 95\% CI):
   
 ```{r sim2or}
-exp(betas["sexmale"])
-exp(mydeltaage * betas["age"])
+(OR <- exp(betas))
 ```
+
+According to the previous results, the estimated OR of the disease associate to sex, adjusted by age, is `r sprintf("%.2f", OR["sexmale", "estimate"])` (95\% CI: `r sprintf("%.2f", OR["sexmale", "2.5 %"])`, `r sprintf("%.2f", OR["sexmale", "97.5 %"])`)). In other words, among individuals of the same age, the odds of the disease is a `r sprintf("%.2f", 100 * (1 - OR["sexmale", "estimate"]))`\% lower among males than among women (95\% CI: (`r sprintf("%.2f", 100 * (1 - OR["sexmale", "97.5 %"]))`\% , `r sprintf("%.2f", 100 * (1 - OR["sexmale", "2.5 %"]))`\%)). Regarding age, the OR associated to age in the previous table is for a 1-year increase. Hence, the OR estimated for a `r mydeltaage` years increase in age are can be computed as $\text{OR} = \exp(`r mydeltaage`\beta)$, which is `r sprintf("%.2f", (OR["age", "estimate"])^mydeltaage)` (95\% CI: `r sprintf("%.2f", (OR["age", "2.5 %"])^mydeltaage)`, `r sprintf("%.2f", (OR["age", "97.5 %"])^mydeltaage)`). In other words, among individuals of the same gender, a `r mydeltaage` years increase in age is associated to a `r sprintf("%.2f", 100 * (OR["age", "estimate"]^mydeltaage - 1))`\% increase in the odds of the disease (95\% CI: (`r sprintf("%.2f", 100 * (OR["age", "2.5 %"]^mydeltaage -1))`\% , `r sprintf("%.2f", 100 * (OR["age", "97.5 %"]^mydeltaage - 1))`\%)).
 
 The estimates of $\beta$ coefficients associated to the random effects (i.e. the city-specific perturbations of the intercept, $\beta_{0i}$) are:
 
 ```{r sim2ranef}
-ranef(sim2$model)
+ranef(mod2)
+```
+
+The standard deviation of previous random effects is:
+
+```{r sim2ranefsd}
+sd(unlist(ranef(mod2)))
 ```
 
 The estimates of the covariance matrix of the random effects (in this case, a single parameter, $\sigma_0$) are:
 
 ```{r sim2sdranef}
-(varranef <- VarCorr(sim2$model))
+(varranef <- VarCorr(mod2))
 ```
 
 And $\sigma_0$ is available at:
