@@ -597,7 +597,12 @@ mod <- glmer(Y ~ S + A + (1 | C), family = poisson, data = data)
 * A reading on modeling clustered categorical data with mixed effects models can be found in chapter 13 of [this book](https://www.wiley.com/en-es/Categorical+Data+Analysis,+3rd+Edition-p-9780470463635){target="_blank"} and in chapter 10 of [a more recent edition](https://www.wiley.com/en-es/An+Introduction+to+Categorical+Data+Analysis,+3rd+Edition-p-9781119405269){target="_blank"} of the same book.
 
 
-
-
 * A reading on analysis of multicentre epidemiological studies, contrasting fixed or random effects modelling and and meta-analysis can be found [here](https://academic.oup.com/ije/article/47/4/1343/5042988?guestAccessKey=38c30e5f-7f8d-4cc9-b0dc-5d0cd8e65725){target="_blank"}.
+
+
+* A nice introduction to mixed models with R can be found [here](https://m-clark.github.io/mixed-models-with-R/introduction.html){target="_blank"}.
+
+
+
+
 
